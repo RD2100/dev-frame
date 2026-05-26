@@ -1,0 +1,47 @@
+# 后端项目示例 .aiworkflow.yaml
+
+project:
+  id: travel-backend
+  name: Travel Backend
+  type: backend
+  repo_path: /absolute/path/to/travel-backend
+  default_branch: main
+
+commands:
+  install: pip install -e ".[dev]"
+  lint: ruff check .
+  unit_test: pytest tests/ -x --tb=short
+  integration_test: pytest tests/integration/ -x --tb=short
+  e2e: echo "TODO: e2e 测试命令"
+  build: echo "TODO: 构建命令"
+  typecheck: mypy src/
+
+policy:
+  max_fix_rounds: 3
+  max_changed_files: 15
+  max_diff_lines: 500
+  forbidden_paths:
+    - .env*
+    - secrets/**
+    - cert/**
+    - production/**
+    - prod/**
+    - private/**
+    - alembic/versions/**
+  protected_tests:
+    - "**/test_*.py"
+    - "**/*_test.py"
+    - "**/tests/**"
+  require_human_approval_for:
+    - auth
+    - payment
+    - database_migration
+    - permission
+    - production_config
+    - dependency_upgrade
+
+models:
+  planner: gpt-5.5-codex
+  reviewer: gpt-5.5-codex
+  executor: deepseek-v4-pro
+  fixer: deepseek-v4-pro

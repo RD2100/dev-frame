@@ -1,0 +1,50 @@
+# Android 项目示例 .aiworkflow.yaml
+# 放在业务项目根目录
+
+project:
+  id: travel-app-android
+  name: Travel App Android
+  type: android
+  repo_path: /absolute/path/to/travel-app-android
+  default_branch: main
+
+commands:
+  install: echo "TODO: 安装依赖命令"
+  lint: ./gradlew ktlintCheck
+  unit_test: ./gradlew testDebugUnitTest
+  integration_test: echo "TODO: 集成测试命令"
+  e2e: echo "TODO: e2e 测试命令"
+  build: ./gradlew assembleDebug
+  typecheck: echo "TODO: 类型检查命令"
+
+policy:
+  max_fix_rounds: 3
+  max_changed_files: 15
+  max_diff_lines: 500
+  forbidden_paths:
+    - .env*
+    - secrets/**
+    - cert/**
+    - keystore/**
+    - production/**
+    - prod/**
+    - private/**
+    - app/release/**
+  protected_tests:
+    - "**/*Test.kt"
+    - "**/*Test.java"
+    - "**/*.test.*"
+    - "**/*.spec.*"
+  require_human_approval_for:
+    - auth
+    - payment
+    - database_migration
+    - permission
+    - production_config
+    - dependency_upgrade
+
+models:
+  planner: gpt-5.5-codex
+  reviewer: gpt-5.5-codex
+  executor: deepseek-v4-pro
+  fixer: deepseek-v4-pro

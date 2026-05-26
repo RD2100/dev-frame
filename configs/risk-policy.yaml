@@ -1,0 +1,79 @@
+# ============================================================
+# 风险策略配置
+# 定义什么算 low / medium / high 风险
+# ============================================================
+
+risk_categories:
+
+  low:
+    description: 低风险 — 可直接自动执行
+    patterns:
+      - lint 修复
+      - 文档更新
+      - 注释补充
+      - 非核心 UI 文案修改
+      - 单测补充 / 新增测试
+      - 类型错误修复
+      - import 排序 / 格式化
+    max_fix_rounds: 3
+    max_changed_files: 20
+    max_diff_lines: 800
+
+  medium:
+    description: 中风险 — 需复审，可自动执行
+    patterns:
+      - 普通业务逻辑修改
+      - API 参数修复
+      - 状态管理修复
+      - 构建配置小修改
+      - 非核心依赖补丁升级 (< minor)
+    max_fix_rounds: 3
+    max_changed_files: 15
+    max_diff_lines: 500
+
+  high:
+    description: 高风险 — 必须 human_gate
+    patterns:
+      - 登录认证
+      - 权限系统
+      - 支付
+      - 数据库迁移
+      - 加密
+      - 证书
+      - 密钥
+      - 生产配置
+      - CI/CD 配置
+      - 删除文件
+      - 依赖大版本升级 (>= major)
+      - 安全策略修改
+      - 修改 forbidden_paths
+    max_fix_rounds: 1
+    max_changed_files: 5
+    max_diff_lines: 200
+
+# 硬规则 — 不可覆盖
+hard_rules:
+  - rule: "high 风险任务必须 human_gate"
+    action: human_gate
+  - rule: "修改 forbidden_paths 必须 human_gate"
+    action: human_gate
+  - rule: "删除 protected_tests 必须 blocked"
+    action: blocked
+  - rule: "降低测试断言必须 blocked"
+    action: blocked
+  - rule: "diff 超过 max_diff_lines 必须 human_gate"
+    action: human_gate
+  - rule: "changed_files 超过 max_changed_files 必须 human_gate"
+    action: human_gate
+  - rule: "连续修复超过 max_fix_rounds 必须 blocked"
+    action: blocked
+  - rule: "不允许自动 push"
+    action: blocked
+  - rule: "不允许自动 merge"
+    action: blocked
+  - rule: "不允许直接修改 main/master"
+    action: blocked
+  - rule: "agent 不得自行发明测试命令"
+    action: blocked
+  - rule: "shell 命令只允许执行 .aiworkflow.yaml 中声明的命令"
+    action: blocked

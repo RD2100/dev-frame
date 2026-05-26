@@ -1,0 +1,115 @@
+{
+  "batch_id": "batch-local-quality",
+  "mode": "dry-run",
+  "description": "Local quality gate — all Tier 0 checks, no backend, no destructive ops",
+  "tasks": [
+    {
+      "id": "compileall",
+      "title": "Python compileall check",
+      "tier": 0,
+      "command": "python -m compileall -q src",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "tasks-yaml-parse",
+      "title": "tasks.yaml parse check",
+      "tier": 0,
+      "command": "python -c \"import yaml; yaml.safe_load(open('tasks.yaml',encoding='utf-8')); print('OK')\"",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 10
+    },
+    {
+      "id": "smoke-acceptance",
+      "title": "Python smoke acceptance suite",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run smoke",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "dynamic-acceptance",
+      "title": "Python dynamic acceptance suite",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run dynamic",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 60
+    },
+    {
+      "id": "assertion-check",
+      "title": "Assertion safety check",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run assertion-check",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "recovery-pipeline",
+      "title": "Recovery pipeline regression",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run recovery-pipeline",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "rc-check",
+      "title": "Release candidate consistency check",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run rc-check",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "cleanup-safety",
+      "title": "Cleanup safety classifier check",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run cleanup-safety",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "status-check",
+      "title": "Status machine doc sync check",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run status-check",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 10
+    },
+    {
+      "id": "backend-probe",
+      "title": "Backend availability probe (read-only)",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli backend probe",
+      "expected_exit_codes": [0, 1],
+      "required_artifacts": [],
+      "timeout_seconds": 30
+    },
+    {
+      "id": "chain-truth-negative",
+      "title": "Chain truth negative audit",
+      "tier": 0,
+      "command": "python -m ai_workflow_hub.cli acceptance run chain-truth-negative",
+      "expected_exit_codes": [0, 1],
+      "required_artifacts": [],
+      "timeout_seconds": 20
+    },
+    {
+      "id": "docs-exist",
+      "title": "Required docs present",
+      "tier": 0,
+      "command": "powershell -Command \"$files=@('docs/v1.17-release-pack.md','docs/OPERATOR_RUNBOOK_INDEX.md','docs/RELEASE_VERIFICATION_CHECKLIST.md','docs/NEXT_AGENT_HANDOFF.md','docs/RECOVERY_PIPELINE_RUNBOOK.md','docs/ARTIFACT_RETENTION_POLICY.md'); $ok=0; foreach($f in $files){if(Test-Path $f){$ok++}}; if($ok -eq $files.Count){exit 0}else{Write-Host missing:$($files.Count-$ok);exit 1}\"",
+      "expected_exit_codes": [0],
+      "required_artifacts": [],
+      "timeout_seconds": 10
+    }
+  ]
+}

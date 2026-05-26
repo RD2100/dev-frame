@@ -1,0 +1,20 @@
+{
+  "queue_id": "recovery-regression-queue",
+  "owner": "code-agent",
+  "mode": "safe-batch",
+  "description": "Recovery pipeline regression checks. Tier 0.",
+  "items": [
+    {
+      "id": "q-recovery-pipeline",
+      "title": "Recovery pipeline regression (16 checks)",
+      "tier": 0,
+      "task_file": "scripts/acceptance/examples/batch-local-quality.json",
+      "runner": "scripts/acceptance/Run-Batch.ps1",
+      "status": "pending",
+      "allowed_files": ["runs/powershell-acceptance/**"],
+      "forbidden_files": ["src/**", "configs/**", "tasks.yaml", "projects.yaml"],
+      "expected_artifacts": ["runs/powershell-acceptance/batch-local-quality/batch-report.md"],
+      "escalate_on": ["failed", "missing_artifact", "timeout", "forbidden_command"]
+    }
+  ]
+}

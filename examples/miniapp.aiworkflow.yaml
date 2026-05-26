@@ -1,0 +1,48 @@
+# 微信小程序项目示例 .aiworkflow.yaml
+
+project:
+  id: travel-miniapp
+  name: Travel Mini Program
+  type: miniapp
+  repo_path: /absolute/path/to/travel-miniapp
+  default_branch: main
+
+commands:
+  install: npm ci
+  lint: npx eslint . --ext .js,.ts,.wxml
+  unit_test: npx jest
+  integration_test: echo "TODO: 集成测试命令"
+  e2e: echo "TODO: e2e 测试命令"
+  build: echo "TODO: 构建命令"
+  typecheck: npx tsc --noEmit
+
+policy:
+  max_fix_rounds: 3
+  max_changed_files: 15
+  max_diff_lines: 500
+  forbidden_paths:
+    - .env*
+    - secrets/**
+    - cert/**
+    - production/**
+    - prod/**
+    - private/**
+    - cloudfunctions/**
+  protected_tests:
+    - "**/*.test.js"
+    - "**/*.test.ts"
+    - "**/*.spec.js"
+    - "**/*.spec.ts"
+  require_human_approval_for:
+    - auth
+    - payment
+    - database_migration
+    - permission
+    - production_config
+    - dependency_upgrade
+
+models:
+  planner: gpt-5.5-codex
+  reviewer: gpt-5.5-codex
+  executor: deepseek-v4-pro
+  fixer: deepseek-v4-pro

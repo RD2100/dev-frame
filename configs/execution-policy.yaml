@@ -1,0 +1,101 @@
+# ============================================================
+# 执行策略配置
+# ============================================================
+
+# --- 默认模式 ---
+default_mode: dry-run
+
+# --- 权限控制 ---
+allow_apply: true
+allow_push: false
+allow_merge: false
+allow_main_branch_apply: false
+
+# --- 工作区策略 ---
+# v0.2: worktree 隔离，失败降级 branch
+require_clean_worktree: true
+isolation_mode: worktree
+fallback_isolation_mode: branch
+
+# --- 安全阈值 ---
+command_timeout_seconds: 600
+max_fix_rounds: 3
+
+# --- Timeout budgets per role ---
+timeouts:
+  planner_seconds: 300
+  system_seconds: 600
+  # executor/fixer use command_timeout_seconds by default
+max_changed_files: 20
+max_diff_lines: 800
+
+# --- 禁止的 shell 模式 ---
+# 匹配到任何模式 → blocked
+forbidden_shell_patterns:
+  - "rm -rf"
+  - "sudo"
+  - "chmod 777"
+  - "curl | sh"
+  - "wget | sh"
+  - "git push"
+  - "git merge"
+  - "git reset --hard"
+  - "git clean -fd"
+  - "> /dev/sda"
+  - "mkfs."
+  - "dd if="
+  - ":(){ :|:& };:"
+
+# --- Coding agent backend ---
+# opencode | claude
+# CLI override: aihub run start --coding-backend claude
+coding_backend: claude
+
+# --- Backend Policy ---
+backend_policy:
+  preferred_backend: claude
+  fallback_backend: ""
+  allow_degraded_fallback: false
+  min_health_score: 0.75
+  degraded_backends:
+    - opencode
+  fallback_on:
+    - timeout
+    - exit_code_nonzero
+
+# --- CI ---
+ci:
+  allow_ci_fix: false
+  max_ci_fix_rounds: 2
+
+# --- Release Policy ---
+# v0.3: 所有外部动作默认关闭，必须显式开启
+release_policy:
+  allow_issue_import: true
+  allow_issue_comment: false
+  allow_issue_close: false
+  allow_pr_create: false
+  allow_push: false
+  allow_merge: false
+  allow_deploy: false
+  allow_ci_fix: false
+  allow_branch_delete: false
+  allow_worktree_force_clean: false
+  allowed_repos: []
+  denied_labels:
+    - production
+    - security
+    - deploy
+
+# --- Daemon ---
+daemon:
+  enabled: false
+  poll_interval_seconds: 10
+  max_concurrency: 1
+  stale_run_minutes: 30
+  max_retries: 3
+
+# --- 允许的 shell 命令来源 ---
+# 只有 .aiworkflow.yaml 中 commands 节声明的命令可以执行
+allowed_command_sources:
+  - project_config_commands

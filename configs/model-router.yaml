@@ -1,0 +1,67 @@
+# ============================================================
+# 模型路由配置 — v0.8 chain correction
+#
+# 目标链路:
+#   思考层 (planner/reviewer/finalizer) → Codex / GPT-5.5
+#   执行层 (executor/fixer)             → Claude Code / DSV4 Pro
+#
+# fallback:
+#   Codex 不可用时 → http_fallback (DeepSeek API)
+#   Claude 不可用时 → blocked（不自动退到 OpenCode）
+# ============================================================
+
+# 后端分层
+thinking_backend: codex
+coding_backend: claude
+
+thinking:
+  backend: codex
+  model: gpt-5.5-codex
+  fallback_backend: http_fallback
+  fallback_model: deepseek-chat
+
+coding:
+  backend: claude
+  model: deepseek-v4-pro
+  fallback_backend: ""  # 不自动退到 OpenCode
+
+# 风险等级 → 模型映射 (继承上述分层)
+default:
+  planner: gpt-5.5-codex
+  reviewer: gpt-5.5-codex
+  finalizer: gpt-5.5-codex
+  executor: deepseek-v4-pro
+  fixer: deepseek-v4-pro
+
+risk_profiles:
+  low:
+    planner: gpt-5.5-codex
+    reviewer: gpt-5.5-codex
+    executor: deepseek-v4-pro
+    fixer: deepseek-v4-pro
+    human_gate_required: false
+
+  medium:
+    planner: gpt-5.5-codex
+    reviewer: gpt-5.5-codex
+    executor: deepseek-v4-pro
+    fixer: deepseek-v4-pro
+    human_gate_required: false
+
+  high:
+    planner: gpt-5.5-codex
+    reviewer: gpt-5.5-codex
+    executor: deepseek-v4-pro
+    fixer: deepseek-v4-pro
+    human_gate_required: true
+
+# 每个 provider 的环境变量映射
+providers:
+  codex:
+    api_key_env: CODEX_API_KEY
+    api_base_env: CODEX_API_BASE
+    model_env_prefix: CODEX_MODEL_
+  claude:
+    api_key_env: OPENCODE_API_KEY
+    api_base_env: OPENCODE_API_BASE
+    model_env_prefix: CLAUDE_MODEL_

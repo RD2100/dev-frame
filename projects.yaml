@@ -1,0 +1,25 @@
+projects:
+- id: test-repo
+  name: Test Repository
+  path: D:/devFrame/ai-workflow-hub-test-repo
+  config: .aiworkflow.yaml
+  enabled: true
+  priority: high
+- id: e2e-test
+  name: AI-Hub E2E
+  path: D:/devFrame/ai-workflow-hub-e2e-test
+  config: .aiworkflow.yaml
+  enabled: true
+  priority: high
+- id: devFrame
+  name: devFrame
+  path: D:\devFrame
+  config: .aiworkflow.yaml
+  enabled: true
+  priority: medium
+- id: ai-workflow-hub
+  name: ai-workflow-hub
+  path: D:\devFrame\ai-workflow-hub
+  config: .aiworkflow.yaml
+  enabled: true
+  priority: medium
