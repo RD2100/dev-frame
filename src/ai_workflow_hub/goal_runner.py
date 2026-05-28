@@ -1,4 +1,4 @@
-"""Goal runner v1.1 — batch-first execution with boundary checks."""
+﻿"""Goal runner v1.1 鈥?batch-first execution with boundary checks."""
 
 from __future__ import annotations
 
@@ -32,6 +32,9 @@ def run_goal(goal_id: str, project_id: str, backend: str = "claude") -> dict[str
         return {"error": "No batches in goal", "goal_id": goal_id}
 
     results = []
+    # --- Per-batch retry config (v1.3) ---
+    max_batch_retries = g.get("max_batch_retries", 1)  # default: 1 retry = 2 total attempts
+
     for b in batches:
         bid = b["batch_id"]
 
@@ -59,7 +62,7 @@ def run_goal(goal_id: str, project_id: str, backend: str = "claude") -> dict[str
             results.append({"batch": bid, "status": "human_required", "reason": "destructive"})
             continue
 
-        # High risk → human gate
+        # High risk 鈫?human gate
         if b.get("risk_level") == "high":
             update_batch_status(goal_id, bid, "human_required",
                                 review_result="high risk batch requires human gate")
@@ -73,66 +76,99 @@ def run_goal(goal_id: str, project_id: str, backend: str = "claude") -> dict[str
                           risk=b.get("risk_level", "low"))
         update_batch_status(goal_id, bid, "running", task_id=task_id)
 
-        # Execute
-        exec_error: str | None = None
-        try:
-            from .cli import _execute_run
-            _execute_run(project_id=project_id, task_id=task_id,
-                        apply_changes=True, run_tests=False,
-                        coding_backend=backend,
-                        task_allowed_files=b.get("allowed_files", []),
-                        task_forbidden_files=b.get("forbidden_files", []))
-        except Exception as e:
-            exec_error = str(e)
+        # --- Per-batch retry loop (v1.3) ---
+        batch_attempt = 0
+        while True:
+            exec_error: str | None = None
+            try:
+                from .cli import _execute_run
+                _execute_run(project_id=project_id, task_id=task_id,
+                            apply_changes=True, run_tests=False,
+                            coding_backend=backend,
+                            task_allowed_files=b.get("allowed_files", []),
+                            task_forbidden_files=b.get("forbidden_files", []))
+            except Exception as e:
+                exec_error = str(e)
 
-        # Discover run_id (both success and exception paths)
-        run_id = _discover_run_id(project_id, task_id)
-        if run_id:
-            # Early write-back — ensures traceability even on timeout/interrupt
-            new_status = "running" if exec_error is None else "failed"
-            update_batch_status(goal_id, bid, new_status, run_id=run_id, task_id=task_id,
-                               review_result=exec_error or "")
-        if exec_error is not None:
-            results.append({"batch": bid, "status": "failed", "error": exec_error,
-                           "run_id": run_id or ""})
-            continue
+            # Discover run_id (both success and exception paths)
+            run_id = _discover_run_id(project_id, task_id)
+            if run_id:
+                new_status = "running" if exec_error is None else "failed"
+                update_batch_status(goal_id, bid, new_status, run_id=run_id, task_id=task_id,
+                                   review_result=exec_error or "")
 
-        if not run_id:
-            update_batch_status(goal_id, bid, "failed", review_result="no run_id after execute")
-            results.append({"batch": bid, "status": "failed", "reason": "no run_id after execute"})
-            continue
-        from .cli import verify_run_evidence
-        v = verify_run_evidence(run_id, project_id)
+            if exec_error is not None:
+                batch_attempt += 1
+                if batch_attempt <= max_batch_retries:
+                    _logger.info("run_goal: batch %s failed with error, retry %d/%d: %s",
+                                 bid, batch_attempt, max_batch_retries, exec_error)
+                    b["batch_retry_count"] = batch_attempt
+                    update_batch_status(goal_id, bid, "retrying", task_id=task_id,
+                                       review_result=f"attempt {batch_attempt}: {exec_error}")
+                    continue
+                results.append({"batch": bid, "status": "failed", "error": exec_error,
+                               "run_id": run_id or "", "batch_retry_count": batch_attempt})
+                break
 
-        sf = _hub_dir() / "runs" / project_id / run_id / "state.json"
-        changed = []
-        if sf.exists():
-            s = json.loads(sf.read_text(encoding="utf-8"))
-            changed = s.get("changed_files", [])
+            if not run_id:
+                batch_attempt += 1
+                if batch_attempt <= max_batch_retries:
+                    _logger.info("run_goal: batch %s no run_id, retry %d/%d",
+                                 bid, batch_attempt, max_batch_retries)
+                    b["batch_retry_count"] = batch_attempt
+                    continue
+                update_batch_status(goal_id, bid, "failed", review_result="no run_id after execute")
+                results.append({"batch": bid, "status": "failed", "reason": "no run_id after execute",
+                               "batch_retry_count": batch_attempt})
+                break
 
-        allowed = b.get("allowed_files", [])
-        out_of_scope = [f for f in changed if f not in allowed]
-        diff_ok = len(out_of_scope) == 0
+            from .cli import verify_run_evidence
+            v = verify_run_evidence(run_id, project_id)
 
-        batch_passed = v["evidence_ok"] and v["chain_trusted"] and v["final_report_consistent"] and diff_ok
+            sf = _hub_dir() / "runs" / project_id / run_id / "state.json"
+            changed = []
+            if sf.exists():
+                s = json.loads(sf.read_text(encoding="utf-8"))
+                changed = s.get("changed_files", [])
 
-        if batch_passed:
-            update_batch_status(goal_id, bid, "passed", run_id=run_id,  # run_id from task.last_run_id
+            allowed = b.get("allowed_files", [])
+            out_of_scope = [f for f in changed if f not in allowed]
+            diff_ok = len(out_of_scope) == 0
+
+            batch_passed = v["evidence_ok"] and v["chain_trusted"] and v["final_report_consistent"] and diff_ok
+
+            if not batch_passed:
+                batch_attempt += 1
+                if batch_attempt <= max_batch_retries:
+                    reasons = []
+                    if not v["evidence_ok"]: reasons.append("evidence missing")
+                    if not v["chain_trusted"]: reasons.append("chain NOT_TRUSTED")
+                    if not v["final_report_consistent"]: reasons.append("report inconsistent")
+                    if not diff_ok: reasons.append(f"out of scope: {out_of_scope}")
+                    _logger.info("run_goal: batch %s evidence/scope check failed, retry %d/%d: %s",
+                                 bid, batch_attempt, max_batch_retries, "; ".join(reasons))
+                    b["batch_retry_count"] = batch_attempt
+                    continue
+
+                reasons = []
+                if not v["evidence_ok"]: reasons.append("evidence missing")
+                if not v["chain_trusted"]: reasons.append("chain NOT_TRUSTED")
+                if not v["final_report_consistent"]: reasons.append("report inconsistent")
+                if not diff_ok: reasons.append(f"out of scope: {out_of_scope}")
+                if not reasons: reasons.append("unknown")
+                update_batch_status(goal_id, bid, "failed", run_id=run_id,
+                                   review_result="; ".join(reasons),
+                                   changed_files=changed, diff_scope_ok=diff_ok)
+                results.append({"batch": bid, "status": "failed", "run_id": run_id,
+                               "reason": "; ".join(reasons), "batch_retry_count": batch_attempt})
+                break
+
+            update_batch_status(goal_id, bid, "passed", run_id=run_id,
                                review_result="pass", changed_files=changed,
                                diff_scope_ok=True)
-            results.append({"batch": bid, "status": "passed", "run_id": run_id})
-        else:
-            reasons = []
-            if not v["evidence_ok"]: reasons.append("evidence missing")
-            if not v["chain_trusted"]: reasons.append("chain NOT_TRUSTED")
-            if not v["final_report_consistent"]: reasons.append("report inconsistent")
-            if not diff_ok: reasons.append(f"out of scope: {out_of_scope}")
-            if not reasons: reasons.append("unknown")
-            update_batch_status(goal_id, bid, "failed", run_id=run_id,
-                               review_result="; ".join(reasons),
-                               changed_files=changed, diff_scope_ok=diff_ok)
-            results.append({"batch": bid, "status": "failed", "run_id": run_id,
-                           "reason": "; ".join(reasons)})
+            results.append({"batch": bid, "status": "passed", "run_id": run_id,
+                           "batch_retry_count": batch_attempt})
+            break
 
     # Final
     if all_batches_passed(goal_id):
@@ -146,7 +182,7 @@ def run_goal(goal_id: str, project_id: str, backend: str = "claude") -> dict[str
             else:
                 update_goal_status(goal_id, "blocked")
 
-    # Generate goal report — always produce evidence, even on partial failure
+    # Generate goal report 鈥?always produce evidence, even on partial failure
     try:
         from .goal_report import generate_goal_report
         generate_goal_report(goal_id)
@@ -315,7 +351,7 @@ def sync_goal_runs(goal_id: str, project_id: str = "test-repo",
                 allowed = b.get("allowed_files", [])
                 out = [f for f in changed if f not in allowed]
                 diff_ok = len(out) == 0
-                # Status reconciliation: stale running → blocked/review_required
+                # Status reconciliation: stale running 鈫?blocked/review_required
                 # Trigger on evidence availability, not on ev.recovered (may be False after prior recovery)
                 curr_status = b.get("status", "?")
                 is_stale_running = curr_status == "running"
@@ -408,3 +444,4 @@ def _build_batch_description(batch: dict) -> str:
     if batch.get("rollback_plan"):
         lines.append(f"Rollback: {batch['rollback_plan']}")
     return "\n".join(lines)
+
