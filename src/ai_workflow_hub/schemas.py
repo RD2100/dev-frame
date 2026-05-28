@@ -28,6 +28,7 @@ class WorkflowState(BaseModel):
     run_id: str = ""
     run_dir: str = ""
     current_branch: str = ""
+    original_branch: str = ""  # branch before isolation, used for cleanup checkout
     worktree_path: str = ""
     base_project_path: str = ""
     isolation_mode: str = "branch"  # worktree | branch

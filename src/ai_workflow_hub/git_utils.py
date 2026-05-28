@@ -95,6 +95,22 @@ def remove_worktree(repo_path: str, worktree_path: str) -> tuple[bool, str]:
     return True, "Worktree removed"
 
 
+def checkout_branch(repo_path: str, branch_name: str) -> tuple[bool, str]:
+    """Checkout a branch. Returns (success, error_message)."""
+    exit_code, stdout, stderr = _run_git(repo_path, ["checkout", branch_name])
+    if exit_code != 0:
+        return False, stderr or stdout
+    return True, f"Checked out branch: {branch_name}"
+
+
+def delete_branch(repo_path: str, branch_name: str) -> tuple[bool, str]:
+    """Delete a local branch. Caller must ensure this is not the current branch."""
+    exit_code, stdout, stderr = _run_git(repo_path, ["branch", "-D", branch_name])
+    if exit_code != 0:
+        return False, stderr or stdout
+    return True, f"Deleted branch: {branch_name}"
+
+
 # ---------------------------------------------------------------------------
 # diff 收集
 # ---------------------------------------------------------------------------

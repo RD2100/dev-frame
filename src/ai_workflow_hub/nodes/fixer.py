@@ -106,6 +106,11 @@ def fixer_node(state: dict[str, Any]) -> dict[str, Any]:
     )
 
     execution_log = result.get("stdout", "")
+    stderr = result.get("stderr", "")
+    exit_code = result.get("exit_code", -1)
+    timed_out = result.get("timed_out", False)
+    duration = result.get("duration_seconds", 0)
+
     diff_info = collect_all_diff_info(cwd)
     save_diff_patch(cwd, str(Path(run_dir) / "diff.patch"))
 
@@ -113,21 +118,28 @@ def fixer_node(state: dict[str, Any]) -> dict[str, Any]:
     prev_log = state.get("execution_log", "")
     save_run_file(run_dir, "execution-log.md", prev_log + "\n\n" + fix_log)
 
-    return {
+    # Error detection -- match executor_node's pattern
+    clean_stderr = stderr.strip()
+    is_actual_error = (exit_code not in (0, -1) or
+                       'error' in clean_stderr.lower() or
+                       'traceback' in clean_stderr.lower())
+    has_error = timed_out or is_actual_error
+
+    result_dict: dict[str, Any] = {
         "fix_round": fix_round,
         "execution_log": prev_log + "\n\n" + fix_log,
         "git_diff": diff_info["diff_text"],
         "changed_files": diff_info["changed_files"],
         "changed_files_status": diff_info["name_status"],
         "diff_line_count": diff_info["diff_line_count"],
-        "error_message": result.get("stderr", ""),
+        "error_message": stderr,
         "backend_calls": {
             "fixer": {
                 "backend": backend,
                 "model": model,
-                "exit_code": result.get("exit_code", -1),
-                "timed_out": result.get("timed_out", False),
-                "duration_seconds": result.get("duration_seconds", 0),
+                "exit_code": exit_code,
+                "timed_out": timed_out,
+                "duration_seconds": duration,
                 "command_preview": result.get("command_preview", ""),
                 "stdout_log": str(Path(run_dir) / f"{backend}-fixer-r{fix_round}-stdout.log"),
                 "stderr_log": str(Path(run_dir) / f"{backend}-fixer-r{fix_round}-stderr.log"),
@@ -136,3 +148,8 @@ def fixer_node(state: dict[str, Any]) -> dict[str, Any]:
             }
         },
     }
+
+    if has_error:
+        result_dict["status"] = "failed"
+
+    return result_dict

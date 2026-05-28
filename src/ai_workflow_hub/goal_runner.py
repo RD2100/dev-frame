@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,12 @@ from .goal_store import (
     increment_replan, all_batches_passed, get_batch,
 )
 from .config_loader import _hub_dir
+
+_logger = logging.getLogger(__name__)
+
+# Batch statuses that mean a batch should NOT be re-executed.
+# Consistent with task_queue._TERMINAL_STATUSES semantics.
+_SKIP_BATCH_STATUSES = frozenset({"passed", "running", "human_required"})
 
 
 def run_goal(goal_id: str, project_id: str, backend: str = "claude") -> dict[str, Any]:
@@ -27,6 +34,17 @@ def run_goal(goal_id: str, project_id: str, backend: str = "claude") -> dict[str
     results = []
     for b in batches:
         bid = b["batch_id"]
+
+        # Idempotency: skip batches already in a non-restartable state
+        current_status = b.get("status", "")
+        if current_status in _SKIP_BATCH_STATUSES:
+            _logger.info(
+                "run_goal: skipping batch %s (status=%s, already in non-restartable state)",
+                bid, current_status,
+            )
+            results.append({"batch": bid, "status": current_status,
+                           "reason": f"skipped (already {current_status})"})
+            continue
 
         # Pre-flight: batch boundary required
         if not b.get("allowed_files"):

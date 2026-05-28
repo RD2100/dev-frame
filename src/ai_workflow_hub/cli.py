@@ -2011,6 +2011,7 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
 
     # 9. 隔离策略：worktree → branch fallback
     current_branch = get_current_branch(project_path)
+    original_branch = current_branch  # preserved for cleanup (Defect 2 fix)
     worktree_path = ""
     isolation_mode = "branch"
     isolation_fallback_reason = ""
@@ -2020,6 +2021,8 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
         mode = execution_policy.get("isolation_mode", "worktree")
         fallback_mode = execution_policy.get("fallback_isolation_mode", "branch")
         ai_branch = f"ai/{task_id}-{run_id[-12:]}"
+        _worktree_created = False
+        _branch_created = False
 
         if mode == "worktree":
             wt_dir = str(Path(project_path).parent / "aihub-worktrees" / project_id / f"{task_id}-{run_id[-12:]}")
@@ -2028,6 +2031,7 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
                 worktree_path = wt_dir
                 isolation_mode = "worktree"
                 current_branch = ai_branch
+                _worktree_created = True
                 console.print(f"[green]Worktree 创建: {worktree_path}[/green]")
             else:
                 isolation_fallback_reason = f"worktree failed: {msg}"
@@ -2040,6 +2044,7 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
                 raise typer.Exit(1)
             current_branch = ai_branch
             isolation_mode = fallback_mode if isolation_mode == "worktree" else isolation_mode
+            _branch_created = True
             console.print(f"[green]在分支 '{ai_branch}' 上执行[/green]")
 
     # CI report from task (for CI fix)
@@ -2068,6 +2073,7 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
         current_branch=current_branch,
         worktree_path=worktree_path,
         base_project_path=project_path,
+        original_branch=original_branch,
         isolation_mode=isolation_mode,
         isolation_fallback_reason=isolation_fallback_reason,
         dry_run=not apply_changes,
@@ -2129,6 +2135,9 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
     from .task_queue import mark_task_running, mark_task_finished
     mark_task_running(task_id, run_id)
 
+    final_state = None
+    _should_cleanup = False  # set to True only for non-deliverable outcomes (Defect 1 fix)
+
     try:
         final_state = app_graph.invoke(
             state_dict,
@@ -2161,7 +2170,23 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
         state_dict["timeout_category"] = category
         state_dict["updated_at"] = WorkflowState().updated_at
         save_run_json(run_dir, "state.json", state_dict)
+        _should_cleanup = True  # exception = non-deliverable (Defect 1 fix)
+        cleanup_result = _cleanup_isolation(project_path, worktree_path, ai_branch,
+                                           original_branch, _worktree_created,
+                                           _branch_created, run_dir, apply_changes)
+        state_dict.update(cleanup_result)
+        save_run_json(run_dir, "state.json", state_dict)
         raise typer.Exit(1)
+
+    # Defect 1 fix: only cleanup for non-deliverable statuses (not "passed")
+    cleanup_result = {"cleanup_success": True, "cleanup_error": ""}
+    if apply_changes and (_worktree_created or _branch_created):
+        status = final_state.get("status", "unknown")
+        if status in ("failed", "blocked", "human_required", "running", "pending"):
+            _should_cleanup = True
+            cleanup_result = _cleanup_isolation(project_path, worktree_path, ai_branch,
+                                               original_branch, _worktree_created,
+                                               _branch_created, run_dir, apply_changes)
 
     # 统一持久化最终状态 — 无论 workflow 走到哪个节点结束
     status = final_state.get("status", "unknown")
@@ -2170,6 +2195,9 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
         status = "failed"
         final_state["status"] = "failed"
 
+    # Defect 3RR fix: merge cleanup result into final_state before persisting,
+    # so cleanup fields are not lost when final_state overwrites state.json
+    final_state.update(cleanup_result)
     final_state["updated_at"] = WorkflowState().updated_at
     save_run_json(run_dir, "state.json", final_state)
     mark_task_finished(task_id, status, run_id,
@@ -2196,6 +2224,74 @@ def _execute_run(project_id: str, task_id: str, apply_changes: bool, run_tests: 
         console.print(f"\n[yellow]Human gate required. 查看: {run_dir}/human-gate.md[/yellow]")
         console.print(f"[dim]当前运行已通过 checkpointer 保存 (thread_id={run_id})[/dim]")
         console.print(f"[dim]审批后，重新运行 aihub run start --apply 继续[/dim]")
+
+
+def _cleanup_isolation(project_path: str, worktree_path: str, ai_branch: str,
+                      original_branch: str, _worktree_created: bool,
+                      _branch_created: bool, run_dir: str,
+                      apply_changes: bool) -> dict[str, Any]:
+    """Clean up isolation resources (worktree/branch) for non-deliverable outcomes.
+
+    Returns a dict with keys cleanup_success (bool) and cleanup_error (str).
+    Caller is responsible for merging these into the final state before persisting.
+
+    Does NOT write state.json — that is the caller's responsibility so the
+    cleanup fields are not overwritten by a subsequent final_state save.
+
+    Defect 1 fix: Only called when status is non-deliverable (failed/blocked/human_required/exception).
+    Defect 2 fix: Checkout original_branch before deleting temp branch to avoid
+    "cannot delete branch you are on" errors.
+    Defect 3RR fix: Returns cleanup result instead of writing state.json internally.
+    """
+    if not apply_changes or not (_worktree_created or _branch_created):
+        return {"cleanup_success": True, "cleanup_error": ""}
+
+    from .git_utils import remove_worktree, delete_branch, checkout_branch
+    cleanup_success = True
+    cleanup_error = ""
+
+    if _worktree_created and worktree_path:
+        ok, msg = remove_worktree(project_path, worktree_path)
+        if not ok:
+            cleanup_success = False
+            cleanup_error = f"worktree_remove: {msg}"
+            console.print(f"[yellow]Worktree 清理失败: {msg}[/yellow]")
+        else:
+            console.print(f"[dim]Worktree 已清理: {worktree_path}[/dim]")
+
+    if _branch_created:
+        # Defect 2 fix: checkout original_branch first so delete_branch can succeed
+        if original_branch:
+            co_ok, co_msg = checkout_branch(project_path, original_branch)
+            if not co_ok:
+                # Defect 3RR fix: checkout failure must be recorded as cleanup failure
+                cleanup_success = False
+                if cleanup_error:
+                    cleanup_error += f"; checkout_original: {co_msg}"
+                else:
+                    cleanup_error = f"checkout_original: {co_msg}"
+                console.print(f"[yellow]Checkout 回 {original_branch} 失败: {co_msg}[/yellow]")
+        ok, msg = delete_branch(project_path, ai_branch)
+        if not ok:
+            cleanup_success = False
+            if cleanup_error:
+                cleanup_error += f"; branch_delete: {msg}"
+            else:
+                cleanup_error = f"branch_delete: {msg}"
+            console.print(f"[yellow]分支清理失败: {msg}[/yellow]")
+        else:
+            console.print(f"[dim]分支已清理: {ai_branch}[/dim]")
+
+    # Persist cleanup result to isolation-cleanup.json (dedicated artifact)
+    # state.json persistence is handled by the caller to prevent overwrite
+    save_run_json(run_dir, "isolation-cleanup.json", {
+        "cleanup_success": cleanup_success,
+        "cleanup_error": cleanup_error,
+        "worktree_created": _worktree_created,
+        "branch_created": _branch_created,
+        "cleaned_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"cleanup_success": cleanup_success, "cleanup_error": cleanup_error}
 
 
 def _generate_fallback_final_report(run_dir: str, state: dict[str, Any]) -> None:

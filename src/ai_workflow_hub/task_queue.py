@@ -35,6 +35,9 @@ def _normalize(task: dict[str, Any]) -> dict[str, Any]:
 _VALID_STATUSES = {"queued", "running", "passed", "failed", "blocked",
                    "human_required", "cancelled", "paused", "archived"}
 
+_TERMINAL_STATUSES = {"passed", "failed", "blocked", "cancelled",
+                      "archived", "human_required"}
+
 
 def list_tasks(status: str | None = None) -> list[dict[str, Any]]:
     """只读列出任务，不加锁."""
@@ -99,13 +102,19 @@ def update_task_status(task_id: str, status: str) -> bool:
 
 
 def mark_task_running(task_id: str, run_id: str) -> bool:
-    """标记运行中 — 加锁 RMW，仅 queued→running 转换."""
+    """标记运行中 — 加锁 RMW，仅 queued→running 转换.
+
+    终态任务不可重新启动；已在运行中的任务不可重复标记.
+    """
     with tasks_lock():
         data = get_tasks()
         tasks = data.get("tasks") or []
         for t in tasks:
             if t.get("id") == task_id:
                 current = t.get("status", "")
+                # 终态任务不可重新启动
+                if current in _TERMINAL_STATUSES:
+                    return False
                 # 已经是 running 则不重复标记（防护重复启动）
                 if current == "running":
                     return False
