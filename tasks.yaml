@@ -2612,3 +2612,71 @@ tasks:
   lease_until: ''
   created_at: '2026-05-28T16:21:01.232422+00:00'
   updated_at: '2026-05-28T16:21:01.232422+00:00'
+- id: task-a6c9d2f1
+  project_id: test-proj
+  title: guard-test
+  description: verify terminal guard
+  risk: medium
+  status: passed
+  priority: normal
+  dependencies: []
+  coding_backend: ''
+  last_run_id: run-1
+  retry_count: 0
+  blocked_reason: ''
+  last_started_at: '2026-05-28T16:26:04.200652+00:00'
+  lease_until: ''
+  created_at: '2026-05-28T16:26:03.999863+00:00'
+  updated_at: '2026-05-28T16:26:04.403340+00:00'
+- id: task-47d47ba7
+  project_id: test-proj
+  title: idempotent-test
+  description: already running
+  risk: medium
+  status: running
+  priority: normal
+  dependencies: []
+  coding_backend: ''
+  last_run_id: run-a
+  retry_count: 0
+  blocked_reason: ''
+  last_started_at: '2026-05-28T16:26:05.033767+00:00'
+  lease_until: ''
+  created_at: '2026-05-28T16:26:04.854419+00:00'
+  updated_at: '2026-05-28T16:26:05.033767+00:00'
+- id: task-151b623c
+  project_id: test-proj
+  title: fresh batch
+  description: '## Batch: b1
+
+    Risk domain:  | Risk: low
+
+    Goal: fresh batch
+
+
+    ### Tasks to complete (same risk domain, execute together):
+
+
+    ### ALLOWED FILES (do NOT touch anything else):
+
+    - `a.py`
+
+
+    ### FORBIDDEN:
+
+
+    ### Acceptance gates:
+
+    '
+  risk: low
+  status: queued
+  priority: normal
+  dependencies: []
+  coding_backend: ''
+  last_run_id: ''
+  retry_count: 0
+  blocked_reason: ''
+  last_started_at: ''
+  lease_until: ''
+  created_at: '2026-05-28T16:26:06.412420+00:00'
+  updated_at: '2026-05-28T16:26:06.412420+00:00'

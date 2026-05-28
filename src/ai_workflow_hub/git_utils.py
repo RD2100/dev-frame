@@ -393,3 +393,35 @@ def collect_all_diff_info(repo_path: str) -> dict[str, Any]:
         "name_status": name_status,
         "diff_line_count": diff_line_count,
     }
+
+def validate_path_containment(child: str, parent: str) -> bool:
+    """Check that child path is within parent directory.
+
+    Both paths are resolved to absolute canonical form before comparison.
+    Returns True when child equals parent or is nested under parent.
+    Use this to prevent path-traversal attacks in worktree and run storage.
+    """
+    try:
+        child_resolved = Path(child).resolve()
+        parent_resolved = Path(parent).resolve()
+        return (
+            str(child_resolved).startswith(str(parent_resolved) + os.sep)
+            or child_resolved == parent_resolved
+        )
+    except (OSError, ValueError):
+        return False
+
+
+def safe_worktree_path(project_path: str, task_id: str, run_suffix: str) -> Path | None:
+    """Build and validate a worktree path under the project parent.
+
+    Returns the validated Path, or None when the computed path escapes
+    the project boundary (e.g. via .. traversal in run_suffix).
+    """
+    project_parent = str(Path(project_path).resolve().parent)
+    candidate_dir = str(Path(project_parent) / "aihub-worktrees" / task_id)
+    candidate = str(Path(candidate_dir) / f"task-{run_suffix}")
+
+    if not validate_path_containment(candidate, project_parent):
+        return None
+    return Path(candidate)
